@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS clips (
     source_title TEXT,
     video_start_seconds REAL,
     video_end_seconds REAL,
+    ocr_markdown TEXT,
+    ocr_text TEXT,
+    ocr_latex TEXT,
     idempotency_key TEXT NOT NULL UNIQUE,
     request_fingerprint TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -53,6 +56,7 @@ CREATE TABLE IF NOT EXISTS extraction_jobs (
     attempt_count INTEGER NOT NULL DEFAULT 0,
     error TEXT,
     output_path TEXT,
+    structured_json_path TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -110,7 +114,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS clip_search USING fts5(
 
 INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
 INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
+INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
 """
+
+REQUIRED_COLUMNS = {
+    "clips": {
+        "ocr_markdown": "TEXT",
+        "ocr_text": "TEXT",
+        "ocr_latex": "TEXT",
+    },
+    "extraction_jobs": {"structured_json_path": "TEXT"},
+}
 
 
 class Database:
@@ -121,6 +135,14 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            for table, columns in REQUIRED_COLUMNS.items():
+                existing = {
+                    row["name"]
+                    for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+                for name, column_type in columns.items():
+                    if name not in existing:
+                        connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

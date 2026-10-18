@@ -85,3 +85,11 @@ class ExportConfirm(BaseModel):
     model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
 
     confirm_overwrite: bool = False
+
+
+class ExtractionUpdate(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    ocr_markdown: str | None = Field(default=None, max_length=4_000_000)
+    ocr_text: str | None = Field(default=None, max_length=4_000_000)
+    ocr_latex: str | None = Field(default=None, max_length=4_000_000)

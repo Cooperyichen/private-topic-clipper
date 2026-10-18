@@ -25,6 +25,7 @@ from .schemas import (
     BatchUpdate,
     ClipUpdate,
     ExportConfirm,
+    ExtractionUpdate,
     TagCreate,
     TopicClipCreate,
     TopicCreate,
@@ -99,6 +100,68 @@ def install_organization_routes(app: FastAPI) -> None:
             )
             row = connection.execute("SELECT * FROM tags WHERE id = ?", (tag_id,)).fetchone()
             return JSONResponse(status_code=201, content={"data": serialize_tag(row)})
+
+    @app.patch("/api/v1/clips/{clip_id}/extraction")
+    def update_extraction(
+        request: Request, clip_id: str, payload: ExtractionUpdate
+    ) -> dict[str, Any]:
+        supplied = payload.model_fields_set
+        if not supplied:
+            raise ApiError(400, "EMPTY_UPDATE", "At least one extraction field is required")
+        mapping = {
+            "ocr_markdown": "ocr_markdown",
+            "ocr_text": "ocr_text",
+            "ocr_latex": "ocr_latex",
+        }
+        assignments = [f"{mapping[field]} = ?" for field in mapping if field in supplied]
+        values = [getattr(payload, field) for field in mapping if field in supplied]
+        assignments.append("updated_at = ?")
+        values.extend([current_time(), clip_id])
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            require_row(
+                connection,
+                "SELECT * FROM clips WHERE id = ?",
+                (clip_id,),
+                "CLIP_NOT_FOUND",
+            )
+            connection.execute(f"UPDATE clips SET {', '.join(assignments)} WHERE id = ?", values)
+            refresh_search(connection, clip_id)
+            row = connection.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+            return {"data": serialize_clip(connection, row)}
+
+    @app.get("/api/v1/extraction-jobs")
+    def list_extraction_jobs(request: Request) -> dict[str, Any]:
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM extraction_jobs ORDER BY created_at DESC, rowid DESC"
+            ).fetchall()
+            return {"data": [serialize_job(row) for row in rows]}
+
+    @app.post("/api/v1/extraction-jobs/{job_id}/retry")
+    def retry_extraction_job(request: Request, job_id: str) -> dict[str, Any]:
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            row = require_row(
+                connection,
+                "SELECT * FROM extraction_jobs WHERE id = ?",
+                (job_id,),
+                "EXTRACTION_JOB_NOT_FOUND",
+            )
+            if row["status"] not in {"FAILED", "COMPLETED"}:
+                raise ApiError(409, "JOB_NOT_RETRYABLE", "Only finished jobs can be retried")
+            connection.execute(
+                """
+                UPDATE extraction_jobs
+                SET status = 'PENDING', error = NULL, updated_at = ? WHERE id = ?
+                """,
+                (current_time(), job_id),
+            )
+            updated = connection.execute(
+                "SELECT * FROM extraction_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            return {"data": serialize_job(updated)}
 
     @app.get("/api/v1/tags")
     def list_tags(request: Request) -> dict[str, Any]:
@@ -355,6 +418,23 @@ def serialize_tag(row: sqlite3.Row) -> dict[str, Any]:
     return {"id": row["id"], "name": row["name"]}
 
 
+def serialize_job(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "clipId": row["clip_id"],
+        "assetId": row["asset_id"],
+        "status": row["status"],
+        "minerUVersion": row["mineru_version"],
+        "tier": row["tier"],
+        "attemptCount": row["attempt_count"],
+        "error": row["error"],
+        "outputPath": row["output_path"],
+        "structuredJsonPath": row["structured_json_path"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
 def serialize_topic(
     connection: sqlite3.Connection, row: sqlite3.Row, include_clips: bool = True
 ) -> dict[str, Any]:
@@ -419,7 +499,13 @@ def refresh_search(connection: sqlite3.Connection, clip_id: str) -> None:
     connection.execute("DELETE FROM clip_search WHERE clip_id = ?", (clip_id,))
     connection.execute(
         "INSERT INTO clip_search VALUES (?, ?, ?, ?, ?)",
-        (clip_id, row["raw_text"], row["editable_text"], row["note"], row["source_title"]),
+        (
+            clip_id,
+            row["ocr_text"] or row["raw_text"],
+            row["editable_text"],
+            row["note"],
+            row["source_title"],
+        ),
     )
 
 

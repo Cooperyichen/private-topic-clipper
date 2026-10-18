@@ -35,7 +35,9 @@ def serialize_clip(connection: sqlite3.Connection, row: sqlite3.Row) -> dict[str
         "updatedAt": row["updated_at"],
         "extractionStatus": job["status"] if job else None,
         "minerUVersion": job["mineru_version"] if job else None,
-        "ocrMarkdown": None,
+        "ocrMarkdown": row["ocr_markdown"],
+        "ocrText": row["ocr_text"],
+        "ocrLatex": row["ocr_latex"],
         "tags": [{"id": tag["id"], "name": tag["name"]} for tag in tags],
         "assets": [
             {
