@@ -1,0 +1,26 @@
+[Unit]
+Description=Second Brain Clipper MinerU Worker
+After=network-online.target clipper-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/coope/codex/second-brain/apps/clipper/backend
+EnvironmentFile=/home/coope/codex/second-brain/apps/clipper/.env
+Environment=MINERU_MODEL_SOURCE=local
+ExecStart=/home/coope/codex/second-brain/apps/clipper/backend/.venv/bin/clipper-worker --poll-seconds 2
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/coope/codex/second-brain/apps/clipper/var /home/coope/.cache /home/coope/.mineru
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+[Install]
+WantedBy=default.target

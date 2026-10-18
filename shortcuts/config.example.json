@@ -1,0 +1,5 @@
+{
+  "baseUrl": "https://replace-with-this-device-name.your-tailnet.ts.net",
+  "apiVersion": "v1",
+  "maxFileBytes": 104857600
+}
