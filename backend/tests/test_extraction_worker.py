@@ -44,7 +44,8 @@ def test_worker_runs_mineru_basic_and_persists_outputs(
         return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
 
     assert process_next_job(get_settings(), run_command=fake_runner) is True
-    assert commands[0][0:2] == ["mineru-kit", "parse"]
+    assert Path(commands[0][0]).name == "mineru-kit"
+    assert commands[0][1] == "parse"
     assert commands[0][-2:] == ["--tier", "basic"]
 
     updated = client.get(f"/api/v1/clips/{clip['id']}", headers=auth_headers).json()["data"]

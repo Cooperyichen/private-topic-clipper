@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sqlite3
 import stat
 import subprocess
+import sys
 import time
 import zipfile
 from collections.abc import Callable
@@ -33,7 +35,7 @@ def process_next_job(
     bundle_path = output_dir / "result.zip"
     input_path = safe_asset_path(settings.assets_dir, job["relative_path"])
     command = [
-        "mineru-kit",
+        str(Path(sys.executable).with_name("mineru-kit")),
         "parse",
         str(input_path),
         "-o",
@@ -61,9 +63,7 @@ def process_next_job(
         markdown_path = first_file(extracted_dir, "*.md")
         json_path = preferred_json(extracted_dir)
         markdown = markdown_path.read_text(encoding="utf-8") if markdown_path else ""
-        latex = "\n\n".join(
-            path.read_text(encoding="utf-8") for path in sorted(extracted_dir.rglob("*.tex"))
-        )
+        latex = extract_latex(markdown, extracted_dir)
         structured_path = str(json_path.relative_to(settings.data_dir)) if json_path else None
         mark_completed(
             database,
@@ -224,11 +224,27 @@ def preferred_json(root: Path) -> Path | None:
     return candidates[0] if candidates else None
 
 
+def extract_latex(markdown: str, root: Path) -> str:
+    expressions: list[str] = []
+    for path in sorted(root.rglob("*.tex")):
+        content = path.read_text(encoding="utf-8").strip()
+        if content:
+            expressions.append(content)
+    patterns = (
+        r"\$\$(.+?)\$\$",
+        r"\\\[(.+?)\\\]",
+        r"\\\((.+?)\\\)",
+        r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)",
+    )
+    for pattern in patterns:
+        expressions.extend(match.strip() for match in re.findall(pattern, markdown, re.DOTALL))
+    return "\n\n".join(dict.fromkeys(expression for expression in expressions if expression))
+
+
 def local_mineru_environment() -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop("MINERU_API_KEY", None)
     environment.pop("MINERU_REMOTE_URL", None)
-    environment["MINERU_TELEMETRY_ENABLED"] = "false"
     return environment
 
 

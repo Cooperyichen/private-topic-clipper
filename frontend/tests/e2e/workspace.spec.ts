@@ -42,6 +42,9 @@ test("responsive inbox works without browser errors", async ({ page }, testInfo)
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "收件箱", exact: true })).toBeVisible();
+  await expect(page.getByLabel("类型筛选")).toBeVisible();
+  await expect(page.getByLabel("标签筛选")).toBeVisible();
+  await expect(page.getByLabel("新标签名称")).toBeVisible();
   await expect(page.getByText("A handwritten insight about optical interconnects")).toBeVisible();
   await page.getByRole("checkbox").check();
   await expect(page.getByText("已选 1 条")).toBeVisible();

@@ -251,47 +251,48 @@ def install_routes(app: FastAPI) -> None:
         request: Request,
         q: str | None = Query(default=None, max_length=500),
         status: str | None = Query(default=None, pattern="^(INBOX|ARCHIVED)$"),
+        kind: str | None = Query(
+            default=None,
+            pattern="^(TEXT|RICH_TEXT|CODE|FORMULA|LINK|VIDEO|IMAGE|PDF)$",
+        ),
+        tag_id: str | None = Query(default=None, alias="tagId", max_length=100),
         page: int = Query(default=1, ge=1),
         page_size: int = Query(default=20, alias="pageSize", ge=1, le=100),
     ) -> dict[str, Any]:
         database: Database = request.app.state.database
         offset = (page - 1) * page_size
         with database.connect() as connection:
+            joins: list[str] = []
+            conditions: list[str] = []
+            parameters: list[Any] = []
             if q and q.strip():
                 query = f'"{q.strip().replace(chr(34), chr(34) * 2)}"*'
-                status_clause = " AND clips.status = ?" if status else ""
-                parameters: tuple[Any, ...] = (query, status) if status else (query,)
-                count = connection.execute(
-                    """
-                    SELECT COUNT(*) FROM clips
-                    JOIN clip_search ON clip_search.clip_id = clips.id
-                    WHERE clip_search MATCH ?
-                    """
-                    + status_clause,
-                    parameters,
-                ).fetchone()[0]
-                rows = connection.execute(
-                    """
-                    SELECT clips.* FROM clips
-                    JOIN clip_search ON clip_search.clip_id = clips.id
-                    WHERE clip_search MATCH ?
-                    """
-                    + status_clause
-                    + " ORDER BY clips.created_at DESC LIMIT ? OFFSET ?",
-                    (*parameters, page_size, offset),
-                ).fetchall()
-            else:
-                status_clause = " WHERE status = ?" if status else ""
-                parameters = (status,) if status else ()
-                count = connection.execute(
-                    "SELECT COUNT(*) FROM clips" + status_clause, parameters
-                ).fetchone()[0]
-                rows = connection.execute(
-                    "SELECT * FROM clips"
-                    + status_clause
-                    + " ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (*parameters, page_size, offset),
-                ).fetchall()
+                joins.append("JOIN clip_search ON clip_search.clip_id = clips.id")
+                conditions.append("clip_search MATCH ?")
+                parameters.append(query)
+            if tag_id:
+                joins.append("JOIN clip_tags ON clip_tags.clip_id = clips.id")
+                conditions.append("clip_tags.tag_id = ?")
+                parameters.append(tag_id)
+            if status:
+                conditions.append("clips.status = ?")
+                parameters.append(status)
+            if kind:
+                conditions.append("clips.kind = ?")
+                parameters.append(kind)
+            from_clause = " FROM clips " + " ".join(joins)
+            where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+            count = connection.execute(
+                "SELECT COUNT(DISTINCT clips.id)" + from_clause + where_clause,
+                parameters,
+            ).fetchone()[0]
+            rows = connection.execute(
+                "SELECT DISTINCT clips.*"
+                + from_clause
+                + where_clause
+                + " ORDER BY clips.created_at DESC LIMIT ? OFFSET ?",
+                (*parameters, page_size, offset),
+            ).fetchall()
             return {
                 "data": [serialize_clip(connection, row) for row in rows],
                 "pagination": {

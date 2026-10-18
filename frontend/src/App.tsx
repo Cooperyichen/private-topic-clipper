@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import type { Clip, ClipStatus, Tag, Topic } from "./types";
+import type { Clip, ClipKind, ClipStatus, Tag, Topic } from "./types";
 
 type View = "inbox" | "topics";
 
@@ -14,6 +14,8 @@ export function App() {
   const [activeTopic, setActiveTopic] = useState<Topic | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ClipStatus | "ALL">("INBOX");
+  const [kind, setKind] = useState<ClipKind | "ALL">("ALL");
+  const [tagFilter, setTagFilter] = useState("ALL");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export function App() {
     setError(null);
     try {
       const [nextClips, nextTags, nextTopics] = await Promise.all([
-        api.clips(search, status),
+        api.clips(search, status, kind, tagFilter),
         api.tags(),
         api.topics(),
       ]);
@@ -36,7 +38,7 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }, [search, status]);
+  }, [search, status, kind, tagFilter]);
 
   useEffect(() => {
     void refresh();
@@ -106,6 +108,7 @@ export function App() {
         <main className="workspace">
           <aside className="capture-rail">
             <QuickCapture onSaved={() => run(async () => undefined, "摘录已进入收件箱")} refresh={refresh} />
+            <TagCreator tags={tags} onCreated={refresh} />
             <div className="rail-note">
               <span>快捷入口</span>
               <p>在 iPhone 或 iPad 的分享菜单中运行 Quick Clip；需要备注时运行 Detailed Clip。</p>
@@ -121,6 +124,12 @@ export function App() {
               <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索正文、备注或来源" /></label>
               <select aria-label="状态筛选" value={status} onChange={(event) => setStatus(event.target.value as ClipStatus | "ALL")}>
                 <option value="INBOX">待整理</option><option value="ARCHIVED">已归档</option><option value="ALL">全部</option>
+              </select>
+              <select aria-label="类型筛选" value={kind} onChange={(event) => setKind(event.target.value as ClipKind | "ALL")}>
+                <option value="ALL">全部类型</option><option value="TEXT">文本</option><option value="LINK">链接</option><option value="CODE">代码</option><option value="FORMULA">公式</option><option value="IMAGE">图片</option><option value="PDF">PDF</option><option value="VIDEO">视频</option>
+              </select>
+              <select aria-label="标签筛选" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}>
+                <option value="ALL">全部标签</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
               </select>
             </div>
 
@@ -183,6 +192,18 @@ function QuickCapture({ refresh, onSaved }: { refresh: () => Promise<void>; onSa
       <button className="primary-button" disabled={saving || (!text.trim() && !source.trim())} onClick={() => void save()}>{saving ? "保存中" : "保存"}</button>
     </div>
   </div>;
+}
+
+function TagCreator({ tags, onCreated }: { tags: Tag[]; onCreated: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function create() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try { await api.createTag(name.trim()); setName(""); await onCreated(); }
+    finally { setSaving(false); }
+  }
+  return <div className="tag-creator"><p className="eyebrow">TAGS</p><div><input aria-label="新标签名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="新建标签" /><button disabled={saving || !name.trim()} onClick={() => void create()}>＋</button></div><p>{tags.length ? tags.map((tag) => `#${tag.name}`).join("  ") : "尚无标签"}</p></div>;
 }
 
 function ClipCard({ clip, selected, onToggle, onOpen }: { clip: Clip; selected: boolean; onToggle: () => void; onOpen: () => void }) {

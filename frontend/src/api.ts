@@ -1,4 +1,4 @@
-import type { ApiErrorBody, Clip, ClipStatus, Tag, Topic } from "./types";
+import type { ApiErrorBody, Clip, ClipKind, ClipStatus, Tag, Topic } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -12,10 +12,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const jsonHeaders = { "Content-Type": "application/json" };
 
 export const api = {
-  async clips(search = "", status: ClipStatus | "ALL" = "INBOX"): Promise<Clip[]> {
+  async clips(
+    search = "",
+    status: ClipStatus | "ALL" = "INBOX",
+    kind: ClipKind | "ALL" = "ALL",
+    tagId = "ALL",
+  ): Promise<Clip[]> {
     const params = new URLSearchParams({ pageSize: "100" });
     if (search.trim()) params.set("q", search.trim());
     if (status !== "ALL") params.set("status", status);
+    if (kind !== "ALL") params.set("kind", kind);
+    if (tagId !== "ALL") params.set("tagId", tagId);
     return (await request<{ data: Clip[] }>(`/api/v1/clips?${params}`)).data;
   },
   async tags(): Promise<Tag[]> {

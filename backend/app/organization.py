@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from .config import Settings
@@ -27,9 +27,12 @@ from .schemas import (
     ExportConfirm,
     ExtractionUpdate,
     TagCreate,
+    TagUpdate,
     TopicClipCreate,
+    TopicClipUpdate,
     TopicCreate,
     TopicOrderUpdate,
+    TopicUpdate,
 )
 
 
@@ -58,6 +61,8 @@ def install_organization_routes(app: FastAPI) -> None:
             "source_url": "source_url",
             "source_title": "source_title",
             "status": "status",
+            "video_start_seconds": "video_start_seconds",
+            "video_end_seconds": "video_end_seconds",
         }
         assignments: list[str] = []
         values: list[Any] = []
@@ -70,12 +75,28 @@ def install_organization_routes(app: FastAPI) -> None:
         assignments.append("updated_at = ?")
         values.extend([timestamp, clip_id])
         with database.connect() as connection:
-            require_row(
+            existing = require_row(
                 connection,
                 "SELECT * FROM clips WHERE id = ?",
                 (clip_id,),
                 "CLIP_NOT_FOUND",
             )
+            start = (
+                payload.video_start_seconds
+                if "video_start_seconds" in supplied
+                else existing["video_start_seconds"]
+            )
+            end = (
+                payload.video_end_seconds
+                if "video_end_seconds" in supplied
+                else existing["video_end_seconds"]
+            )
+            if start is not None and end is not None and end < start:
+                raise ApiError(
+                    422,
+                    "VALIDATION_ERROR",
+                    "videoEndSeconds must not precede videoStartSeconds",
+                )
             connection.execute(f"UPDATE clips SET {', '.join(assignments)} WHERE id = ?", values)
             refresh_search(connection, clip_id)
             row = connection.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
@@ -163,12 +184,49 @@ def install_organization_routes(app: FastAPI) -> None:
             ).fetchone()
             return {"data": serialize_job(updated)}
 
+    @app.get("/api/v1/extraction-jobs/{job_id}")
+    def get_extraction_job(request: Request, job_id: str) -> dict[str, Any]:
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            row = require_row(
+                connection,
+                "SELECT * FROM extraction_jobs WHERE id = ?",
+                (job_id,),
+                "EXTRACTION_JOB_NOT_FOUND",
+            )
+            return {"data": serialize_job(row)}
+
     @app.get("/api/v1/tags")
     def list_tags(request: Request) -> dict[str, Any]:
         database: Database = request.app.state.database
         with database.connect() as connection:
             rows = connection.execute("SELECT * FROM tags ORDER BY name COLLATE NOCASE").fetchall()
             return {"data": [serialize_tag(row) for row in rows]}
+
+    @app.patch("/api/v1/tags/{tag_id}")
+    def update_tag(request: Request, tag_id: str, payload: TagUpdate) -> dict[str, Any]:
+        name = payload.name.strip()
+        if not name:
+            raise ApiError(422, "VALIDATION_ERROR", "Tag name cannot be blank")
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            require_row(connection, "SELECT * FROM tags WHERE id = ?", (tag_id,), "TAG_NOT_FOUND")
+            try:
+                connection.execute("UPDATE tags SET name = ? WHERE id = ?", (name, tag_id))
+            except sqlite3.IntegrityError as error:
+                raise ApiError(
+                    409, "TAG_NAME_EXISTS", "A tag with this name already exists"
+                ) from error
+            row = connection.execute("SELECT * FROM tags WHERE id = ?", (tag_id,)).fetchone()
+            return {"data": serialize_tag(row)}
+
+    @app.delete("/api/v1/tags/{tag_id}", status_code=204)
+    def delete_tag(request: Request, tag_id: str) -> Response:
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            require_row(connection, "SELECT * FROM tags WHERE id = ?", (tag_id,), "TAG_NOT_FOUND")
+            connection.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+        return Response(status_code=204)
 
     @app.post("/api/v1/clips/batch")
     def batch_update(request: Request, payload: BatchUpdate) -> dict[str, Any]:
@@ -222,6 +280,30 @@ def install_organization_routes(app: FastAPI) -> None:
         database: Database = request.app.state.database
         with database.connect() as connection:
             row = require_topic(connection, topic_id)
+            return {"data": serialize_topic(connection, row)}
+
+    @app.patch("/api/v1/topics/{topic_id}")
+    def update_topic(request: Request, topic_id: str, payload: TopicUpdate) -> dict[str, Any]:
+        supplied = payload.model_fields_set
+        if not supplied:
+            raise ApiError(400, "EMPTY_UPDATE", "At least one topic field is required")
+        if "title" in supplied and (payload.title is None or not payload.title.strip()):
+            raise ApiError(422, "VALIDATION_ERROR", "Topic title cannot be blank")
+        assignments: list[str] = []
+        values: list[Any] = []
+        if "title" in supplied:
+            assignments.append("title = ?")
+            values.append(payload.title.strip())
+        if "description" in supplied:
+            assignments.append("description = ?")
+            values.append(payload.description)
+        assignments.append("updated_at = ?")
+        values.extend([current_time(), topic_id])
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            require_topic(connection, topic_id)
+            connection.execute(f"UPDATE topics SET {', '.join(assignments)} WHERE id = ?", values)
+            row = connection.execute("SELECT * FROM topics WHERE id = ?", (topic_id,)).fetchone()
             return {"data": serialize_topic(connection, row)}
 
     @app.post("/api/v1/topics/{topic_id}/clips")
@@ -296,6 +378,85 @@ def install_organization_routes(app: FastAPI) -> None:
             )
             row = connection.execute("SELECT * FROM topics WHERE id = ?", (topic_id,)).fetchone()
             return {"data": serialize_topic(connection, row)}
+
+    @app.patch("/api/v1/topics/{topic_id}/clips/{clip_id}")
+    def update_topic_clip(
+        request: Request,
+        topic_id: str,
+        clip_id: str,
+        payload: TopicClipUpdate,
+    ) -> dict[str, Any]:
+        supplied = payload.model_fields_set
+        if not supplied:
+            raise ApiError(400, "EMPTY_UPDATE", "At least one topic clip field is required")
+        assignments: list[str] = []
+        values: list[Any] = []
+        for field in ("annotation", "representation"):
+            if field in supplied:
+                assignments.append(f"{field} = ?")
+                values.append(getattr(payload, field))
+        values.extend([topic_id, clip_id])
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            require_row(
+                connection,
+                "SELECT * FROM topic_clips WHERE topic_id = ? AND clip_id = ?",
+                (topic_id, clip_id),
+                "TOPIC_CLIP_NOT_FOUND",
+            )
+            connection.execute(
+                f"UPDATE topic_clips SET {', '.join(assignments)} "
+                "WHERE topic_id = ? AND clip_id = ?",
+                values,
+            )
+            connection.execute(
+                "UPDATE topics SET updated_at = ? WHERE id = ?", (current_time(), topic_id)
+            )
+            row = connection.execute(
+                "SELECT * FROM topic_clips WHERE topic_id = ? AND clip_id = ?",
+                (topic_id, clip_id),
+            ).fetchone()
+            return {
+                "data": {
+                    "position": row["position"],
+                    "annotation": row["annotation"],
+                    "representation": row["representation"],
+                    "clip": serialize_clip(
+                        connection,
+                        connection.execute(
+                            "SELECT * FROM clips WHERE id = ?", (clip_id,)
+                        ).fetchone(),
+                    ),
+                }
+            }
+
+    @app.delete("/api/v1/topics/{topic_id}/clips/{clip_id}", status_code=204)
+    def delete_topic_clip(request: Request, topic_id: str, clip_id: str) -> Response:
+        database: Database = request.app.state.database
+        with database.connect() as connection:
+            require_row(
+                connection,
+                "SELECT * FROM topic_clips WHERE topic_id = ? AND clip_id = ?",
+                (topic_id, clip_id),
+                "TOPIC_CLIP_NOT_FOUND",
+            )
+            connection.execute(
+                "DELETE FROM topic_clips WHERE topic_id = ? AND clip_id = ?",
+                (topic_id, clip_id),
+            )
+            remaining = connection.execute(
+                "SELECT clip_id FROM topic_clips WHERE topic_id = ? ORDER BY position",
+                (topic_id,),
+            ).fetchall()
+            for position, row in enumerate(remaining):
+                connection.execute(
+                    "UPDATE topic_clips SET position = ? WHERE topic_id = ? AND clip_id = ?",
+                    (position, topic_id, row["clip_id"]),
+                )
+            connection.execute(
+                "UPDATE topics SET updated_at = ? WHERE id = ?", (current_time(), topic_id)
+            )
+        return Response(status_code=204)
 
     @app.post("/api/v1/topics/{topic_id}/exports/preview")
     def preview_export(request: Request, topic_id: str) -> dict[str, Any]:

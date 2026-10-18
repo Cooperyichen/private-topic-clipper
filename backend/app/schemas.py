@@ -44,12 +44,28 @@ class ClipUpdate(BaseModel):
     source_url: HttpUrl | None = None
     source_title: str | None = Field(default=None, max_length=1_000)
     status: Literal["INBOX", "ARCHIVED"] | None = None
+    video_start_seconds: float | None = Field(default=None, ge=0)
+    video_end_seconds: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_video_range(self) -> ClipUpdate:
+        if (
+            self.video_start_seconds is not None
+            and self.video_end_seconds is not None
+            and self.video_end_seconds < self.video_start_seconds
+        ):
+            raise ValueError("videoEndSeconds must not precede videoStartSeconds")
+        return self
 
 
 class TagCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=100)
+
+
+class TagUpdate(TagCreate):
+    pass
 
 
 class BatchUpdate(BaseModel):
@@ -67,12 +83,26 @@ class TopicCreate(BaseModel):
     description: str | None = Field(default=None, max_length=100_000)
 
 
+class TopicUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=100_000)
+
+
 class TopicClipCreate(BaseModel):
     model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
 
     clip_id: str
     annotation: str | None = Field(default=None, max_length=100_000)
     representation: Literal["ORIGINAL", "EDITED", "OCR"] = "EDITED"
+
+
+class TopicClipUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    annotation: str | None = Field(default=None, max_length=100_000)
+    representation: Literal["ORIGINAL", "EDITED", "OCR"] | None = None
 
 
 class TopicOrderUpdate(BaseModel):
