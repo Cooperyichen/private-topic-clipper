@@ -57,6 +57,48 @@ CREATE TABLE IF NOT EXISTS extraction_jobs (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS tags (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS clip_tags (
+    clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (clip_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS topics (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    export_basename TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS topic_clips (
+    topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    annotation TEXT,
+    representation TEXT NOT NULL DEFAULT 'EDITED',
+    PRIMARY KEY (topic_id, clip_id),
+    UNIQUE (topic_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS export_revisions (
+    id TEXT PRIMARY KEY,
+    topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    markdown_path TEXT NOT NULL,
+    manifest_path TEXT NOT NULL,
+    markdown_content TEXT NOT NULL,
+    manifest_content TEXT NOT NULL,
+    output_checksum TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS clip_search USING fts5(
     clip_id UNINDEXED,
     raw_text,
@@ -67,6 +109,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS clip_search USING fts5(
 );
 
 INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
+INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
 """
 
 

@@ -16,6 +16,8 @@ from fastapi.responses import JSONResponse
 from .config import Settings, get_settings
 from .database import Database
 from .errors import ApiError
+from .organization import install_organization_routes
+from .records import serialize_clip
 from .schemas import CaptureCreate
 from .storage import safe_filename, store_asset
 
@@ -42,6 +44,7 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
     install_middleware(app, settings)
     install_routes(app)
+    install_organization_routes(app)
     return app
 
 
@@ -244,6 +247,7 @@ def install_routes(app: FastAPI) -> None:
     def list_clips(
         request: Request,
         q: str | None = Query(default=None, max_length=500),
+        status: str | None = Query(default=None, pattern="^(INBOX|ARCHIVED)$"),
         page: int = Query(default=1, ge=1),
         page_size: int = Query(default=20, alias="pageSize", ge=1, le=100),
     ) -> dict[str, Any]:
@@ -252,23 +256,38 @@ def install_routes(app: FastAPI) -> None:
         with database.connect() as connection:
             if q and q.strip():
                 query = f'"{q.strip().replace(chr(34), chr(34) * 2)}"*'
+                status_clause = " AND clips.status = ?" if status else ""
+                parameters: tuple[Any, ...] = (query, status) if status else (query,)
                 count = connection.execute(
-                    "SELECT COUNT(*) FROM clip_search WHERE clip_search MATCH ?", (query,)
+                    """
+                    SELECT COUNT(*) FROM clips
+                    JOIN clip_search ON clip_search.clip_id = clips.id
+                    WHERE clip_search MATCH ?
+                    """
+                    + status_clause,
+                    parameters,
                 ).fetchone()[0]
                 rows = connection.execute(
                     """
                     SELECT clips.* FROM clips
                     JOIN clip_search ON clip_search.clip_id = clips.id
                     WHERE clip_search MATCH ?
-                    ORDER BY clips.created_at DESC LIMIT ? OFFSET ?
-                    """,
-                    (query, page_size, offset),
+                    """
+                    + status_clause
+                    + " ORDER BY clips.created_at DESC LIMIT ? OFFSET ?",
+                    (*parameters, page_size, offset),
                 ).fetchall()
             else:
-                count = connection.execute("SELECT COUNT(*) FROM clips").fetchone()[0]
+                status_clause = " WHERE status = ?" if status else ""
+                parameters = (status,) if status else ()
+                count = connection.execute(
+                    "SELECT COUNT(*) FROM clips" + status_clause, parameters
+                ).fetchone()[0]
                 rows = connection.execute(
-                    "SELECT * FROM clips ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (page_size, offset),
+                    "SELECT * FROM clips"
+                    + status_clause
+                    + " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (*parameters, page_size, offset),
                 ).fetchall()
             return {
                 "data": [serialize_clip(connection, row) for row in rows],
@@ -279,42 +298,6 @@ def install_routes(app: FastAPI) -> None:
                     "totalPages": (count + page_size - 1) // page_size,
                 },
             }
-
-
-def serialize_clip(connection, row) -> dict[str, Any]:
-    assets = connection.execute(
-        "SELECT * FROM assets WHERE clip_id = ? ORDER BY created_at", (row["id"],)
-    ).fetchall()
-    job = connection.execute(
-        "SELECT * FROM extraction_jobs WHERE clip_id = ? ORDER BY created_at DESC LIMIT 1",
-        (row["id"],),
-    ).fetchone()
-    return {
-        "id": row["id"],
-        "kind": row["kind"],
-        "status": row["status"],
-        "rawText": row["raw_text"],
-        "editableText": row["editable_text"],
-        "note": row["note"],
-        "sourceUrl": row["source_url"],
-        "sourceTitle": row["source_title"],
-        "videoStartSeconds": row["video_start_seconds"],
-        "videoEndSeconds": row["video_end_seconds"],
-        "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"],
-        "extractionStatus": job["status"] if job else None,
-        "assets": [
-            {
-                "id": asset["id"],
-                "originalName": asset["original_name"],
-                "mediaType": asset["media_type"],
-                "byteSize": asset["byte_size"],
-                "checksumSha256": asset["checksum_sha256"],
-                "relativePath": asset["relative_path"],
-            }
-            for asset in assets
-        ],
-    }
 
 
 def require_idempotency_key(value: str | None) -> str:

@@ -34,3 +34,54 @@ class CaptureCreate(BaseModel):
         ):
             raise ValueError("videoEndSeconds must not precede videoStartSeconds")
         return self
+
+
+class ClipUpdate(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    editable_text: str | None = Field(default=None, max_length=2_000_000)
+    note: str | None = Field(default=None, max_length=100_000)
+    source_url: HttpUrl | None = None
+    source_title: str | None = Field(default=None, max_length=1_000)
+    status: Literal["INBOX", "ARCHIVED"] | None = None
+
+
+class TagCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+
+
+class BatchUpdate(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    clip_ids: list[str] = Field(min_length=1, max_length=500)
+    status: Literal["INBOX", "ARCHIVED"] | None = None
+    add_tag_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class TopicCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=100_000)
+
+
+class TopicClipCreate(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    clip_id: str
+    annotation: str | None = Field(default=None, max_length=100_000)
+    representation: Literal["ORIGINAL", "EDITED", "OCR"] = "EDITED"
+
+
+class TopicOrderUpdate(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    clip_ids: list[str] = Field(min_length=1, max_length=5_000)
+
+
+class ExportConfirm(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    confirm_overwrite: bool = False
