@@ -12,6 +12,7 @@ class Settings:
     data_dir: Path
     vault_dir: Path
     allowed_login: str
+    frontend_dir: Path
     max_upload_bytes: int = 100 * 1024 * 1024
 
     @property
@@ -27,10 +28,12 @@ class Settings:
 def get_settings() -> Settings:
     data_dir = Path(os.getenv("CLIPPER_DATA_DIR", "./var")).expanduser().resolve()
     vault_dir = Path(os.getenv("CLIPPER_VAULT_DIR", "../../vault")).expanduser().resolve()
+    default_frontend = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     return Settings(
         environment=os.getenv("CLIPPER_ENV", "production"),
         data_dir=data_dir,
         vault_dir=vault_dir,
         allowed_login=os.getenv("CLIPPER_ALLOWED_LOGIN", "").strip().casefold(),
+        frontend_dir=Path(os.getenv("CLIPPER_FRONTEND_DIR", str(default_frontend))).resolve(),
         max_upload_bytes=int(os.getenv("CLIPPER_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))),
     )

@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import Settings, get_settings
 from .database import Database
@@ -45,6 +46,8 @@ def create_app() -> FastAPI:
     install_middleware(app, settings)
     install_routes(app)
     install_organization_routes(app)
+    if (settings.frontend_dir / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=settings.frontend_dir, html=True), name="frontend")
     return app
 
 
