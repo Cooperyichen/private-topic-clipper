@@ -18,13 +18,19 @@ services alone do not prevent an idle distribution from stopping.
 
    The script backs up an existing `%UserProfile%\.wslconfig`, preserves other
    settings, and sets `[general] instanceIdleTimeout=-1`. This policy takes
-   effect when WSL next starts. For the current session it starts a hidden
-   Windows `wsl.exe` process running `/usr/bin/sleep infinity`, without restarting
-   Ubuntu or interrupting other workloads. Running the script again reuses
-   that keepalive process.
-3. On this ThinkPad, the existing enabled Windows task
-   `Windows Tailscale WSL SSH Bridge` starts Ubuntu at Windows boot and every
-   minute. Keep that task enabled. The script does not create or modify tasks.
+   effect when WSL next starts. The script also creates the independent Windows
+   task `Clipper WSL Keepalive`, using the current Windows account with S4U
+   logon and limited privileges. It stores no password and runs `wsl.exe`
+   with `/usr/bin/sleep infinity`. Boot and recurring minute triggers start
+   the task; an unlimited execution time and `IgnoreNew` prevent duplicate
+   keepalive processes. Existing tasks with a different action cause an error.
+   Run the installer with permission to register this task. Ubuntu is not
+   restarted. Running the script again reuses the running task.
+3. Check that `Get-ScheduledTask -TaskName 'Clipper WSL Keepalive'` reports
+   `Running`. Close the diagnostic Windows SSH shell before the quiet-interval
+   verification. A `Start-Process` child launched through Windows SSH/interop
+   was observed to disappear when that session ended; only the task-owned
+   process is relied upon for persistence.
 
 The installed WSL version at verification was 2.7.8.0. See Microsoft's
 [WSL settings](https://learn.microsoft.com/en-us/windows/wsl/wsl-config) and
@@ -38,8 +44,8 @@ HTTPS homepage and `/api/v1/clips` from another tailnet device after a quiet
 interval longer than the previous idle shutdown window. An HTTP request alone
 must not be relied upon to keep WSL running.
 
-To undo, restore the printed `.wslconfig.clipper-*.bak` file to `.wslconfig`
+To undo, stop and unregister only the `Clipper WSL Keepalive` task, then
+restore the original printed `.wslconfig.clipper-*.bak` file to `.wslconfig`
 and run `loginctl disable-linger coope` if session-scoped services are desired.
-Stop only the Windows keepalive PID printed by the script. Configuration rollback
-takes effect on the next WSL start. Avoid terminating WSL while other work is
+Configuration rollback takes effect on the next WSL start. Avoid terminating WSL while other work is
 running. Windows sleep and shutdown still make the service unavailable.

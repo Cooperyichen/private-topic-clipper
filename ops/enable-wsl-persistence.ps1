@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([string]$Distro = 'Ubuntu', [string]$LinuxUser = 'coope')
+param(
+    [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$Distro = 'Ubuntu',
+    [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$LinuxUser = 'coope'
+)
 
 $ErrorActionPreference = 'Stop'
 $configPath = Join-Path $env:USERPROFILE '.wslconfig'
@@ -32,17 +35,27 @@ if ($updated -cne $content) {
     [IO.File]::WriteAllText($configPath, $updated, [Text.UTF8Encoding]::new($false))
 }
 
-# Keep this already-running instance alive without terminating other Linux work.
-# The configuration above applies on the next WSL start. The existing Windows
-# WSL SSH Bridge boot task already starts Ubuntu after Windows boots.
+# A scheduled task owns the Windows process independently of SSH and interop
+# sessions. A detached child of an SSH-launched PowerShell can still be killed
+# when its Windows job ends. The task also restarts after Windows boots.
 $wsl = Join-Path $env:WINDIR 'System32\wsl.exe'
-$keepers = @(& $wsl -d $Distro -u $LinuxUser --exec /usr/bin/pgrep -f '^/usr/bin/sleep infinity$')
-if ($LASTEXITCODE -eq 1) {
-    $keeper = Start-Process -FilePath $wsl -ArgumentList @('-d', $Distro, '-u', $LinuxUser, '--exec', '/usr/bin/sleep', 'infinity') -WindowStyle Hidden -PassThru
-    Write-Output "Started WSL keepalive, Windows PID: $($keeper.Id)"
-} elseif ($LASTEXITCODE -ne 0) {
-    throw 'Could not check the WSL keepalive process.'
+$taskName = 'Clipper WSL Keepalive'
+$arguments = "-d $Distro -u $LinuxUser --exec /usr/bin/sleep infinity"
+$task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($task) {
+    if ($task.Actions.Count -ne 1 -or $task.Actions[0].Execute -ne $wsl -or $task.Actions[0].Arguments -ne $arguments) {
+        throw "Existing task '$taskName' has a different action; inspect it before updating."
+    }
 } else {
-    Write-Output "WSL keepalive already running: $keepers"
+    $account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $action = New-ScheduledTaskAction -Execute $wsl -Argument $arguments
+    $principal = New-ScheduledTaskPrincipal -UserId $account -LogonType S4U -RunLevel Limited
+    $startup = New-ScheduledTaskTrigger -AtStartup
+    $retry = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $task = Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Trigger @($startup, $retry) -Settings $settings -Description 'Keep Ubuntu Clipper available independently of SSH sessions.'
 }
+if ($task.State -ne 'Running') { Start-ScheduledTask -TaskName $taskName }
+Get-ScheduledTask -TaskName $taskName | Select-Object TaskName, State
+Get-ScheduledTaskInfo -TaskName $taskName | Select-Object LastRunTime, LastTaskResult
 Write-Output ([IO.File]::ReadAllText($configPath))
