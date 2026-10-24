@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const previewPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z9xkAAAAASUVORK5CYII=",
+  "base64",
+);
+
 const clip = {
   id: "clip-1",
   kind: "IMAGE",
@@ -29,6 +34,8 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { data: [{ id: "topic-1", title: "Optical compute", description: "Evidence", clipCount: 1 }] } });
     } else if (url.pathname === "/api/v1/topics/topic-1") {
       await route.fulfill({ json: { data: { id: "topic-1", title: "Optical compute", description: "Evidence", clips: [{ position: 0, annotation: null, representation: "EDITED", clip }] } } });
+    } else if (url.pathname === "/api/v1/assets/asset-1/content") {
+      await route.fulfill({ status: 200, contentType: "image/png", body: previewPng });
     } else {
       await route.fulfill({ json: { data: {} } });
     }
@@ -61,4 +68,28 @@ test("topic navigation exposes touch ordering workspace", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "主题", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Optical compute/ }).click();
   await expect(page.getByRole("button", { name: "预览导出" })).toBeVisible();
+  await page.getByRole("button", { name: "查看原件与详情" }).click();
+  await expect(page.getByRole("img", { name: "原件：note.png" })).toBeVisible();
+});
+
+test("original image preview is usable at the current viewport", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") errors.push(message.text());
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.goto("/");
+  await page.getByText("A handwritten insight about optical interconnects").click();
+  await expect(page.getByRole("tab", { name: "原件" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("img", { name: "原件：note.png" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "在新窗口打开" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载原件" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("original-preview.png"), fullPage: true });
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(false);
+  expect(errors).toEqual([]);
 });

@@ -26,7 +26,7 @@ test("loads the inbox and exposes touch-friendly batch actions", async () => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/clips/batch", expect.objectContaining({ method: "POST" })));
 });
 
-test("opens the editable representation while showing the original as read-only", async () => {
+test("opens immutable text by default and keeps the editable representation available", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input);
     if (url.includes("/clips?")) return response({ data: [clip], pagination: { totalItems: 1 } });
@@ -34,8 +34,9 @@ test("opens the editable representation while showing the original as read-only"
   });
   render(<App />);
   await userEvent.click(await screen.findByText("Photonic interconnect insight"));
+  expect(screen.getByText("Original")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("tab", { name: "编辑稿" }));
   expect(screen.getByLabelText("可编辑正文")).toHaveValue("Photonic interconnect insight");
-  expect(screen.getByText("不可变原件")).toBeInTheDocument();
 });
 
 function response(body: unknown): Promise<Response> {
