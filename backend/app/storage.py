@@ -71,3 +71,19 @@ def store_asset(
         checksum_sha256=checksum,
         relative_path=relative.as_posix(),
     )
+
+
+def resolve_asset_path(assets_dir: Path, relative_path: str) -> Path:
+    root = assets_dir.resolve()
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as error:
+        raise ApiError(
+            400,
+            "INVALID_ASSET_PATH",
+            "The stored asset path is outside the configured asset directory",
+        ) from error
+    if candidate == root:
+        raise ApiError(400, "INVALID_ASSET_PATH", "The stored asset path is invalid")
+    return candidate

@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings, get_settings
@@ -20,7 +20,7 @@ from .errors import ApiError
 from .organization import install_organization_routes
 from .records import serialize_clip
 from .schemas import CaptureCreate
-from .storage import safe_filename, store_asset
+from .storage import resolve_asset_path, safe_filename, store_asset
 
 
 def now_iso() -> str:
@@ -78,7 +78,11 @@ def install_middleware(app: FastAPI, settings: Settings) -> None:
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Frame-Options"] = (
+            "SAMEORIGIN"
+            if request.url.path.startswith("/api/v1/assets/")
+            else "DENY"
+        )
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data: blob:; "
@@ -302,6 +306,28 @@ def install_routes(app: FastAPI) -> None:
                     "totalPages": (count + page_size - 1) // page_size,
                 },
             }
+
+    @app.get("/api/v1/assets/{asset_id}/content", response_model=None)
+    def get_asset_content(request: Request, asset_id: str) -> FileResponse:
+        database: Database = request.app.state.database
+        settings: Settings = request.app.state.settings
+        with database.connect() as connection:
+            asset = connection.execute(
+                "SELECT * FROM assets WHERE id = ?", (asset_id,)
+            ).fetchone()
+        if asset is None:
+            raise ApiError(404, "ASSET_NOT_FOUND", "The requested asset does not exist")
+
+        path = resolve_asset_path(settings.assets_dir, asset["relative_path"])
+        if not path.is_file():
+            raise ApiError(404, "ASSET_FILE_MISSING", "The original asset file is missing")
+
+        return FileResponse(
+            path,
+            media_type=asset["media_type"],
+            filename=safe_filename(asset["original_name"], asset["media_type"]),
+            content_disposition_type="inline",
+        )
 
 
 def require_idempotency_key(value: str | None) -> str:
