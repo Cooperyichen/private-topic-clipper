@@ -190,3 +190,28 @@ def test_sanitizes_historical_filename_before_building_response_header(
     assert "\r" not in disposition
     assert "\n" not in disposition
     assert "X-Injected:" not in disposition
+
+
+def test_rejects_unsafe_stored_media_type_before_building_response_header(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    asset = upload_asset(
+        client,
+        auth_headers,
+        content=PNG,
+        media_type="image/png",
+        filename="safe.png",
+        key="asset-media-header",
+    )
+    database = client.app.state.database
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE assets SET media_type = ? WHERE id = ?",
+            ("image/png\r\nX-Injected: yes", asset["id"]),
+        )
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/content", headers=auth_headers)
+
+    assert response.status_code == 415
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["error"]["code"] == "UNSUPPORTED_MEDIA"

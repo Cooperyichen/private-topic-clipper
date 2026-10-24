@@ -20,7 +20,7 @@ from .errors import ApiError
 from .organization import install_organization_routes
 from .records import serialize_clip
 from .schemas import CaptureCreate
-from .storage import resolve_asset_path, safe_filename, store_asset
+from .storage import require_supported_media_type, resolve_asset_path, safe_filename, store_asset
 
 
 def now_iso() -> str:
@@ -322,10 +322,11 @@ def install_routes(app: FastAPI) -> None:
         if not path.is_file():
             raise ApiError(404, "ASSET_FILE_MISSING", "The original asset file is missing")
 
+        media_type = require_supported_media_type(asset["media_type"])
         return FileResponse(
             path,
-            media_type=asset["media_type"],
-            filename=safe_filename(asset["original_name"], asset["media_type"]),
+            media_type=media_type,
+            filename=safe_filename(asset["original_name"], media_type),
             content_disposition_type="inline",
         )
 

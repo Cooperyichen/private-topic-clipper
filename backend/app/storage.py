@@ -49,6 +49,12 @@ def validate_media(data: bytes, media_type: str) -> None:
         raise ApiError(415, "UNSUPPORTED_MEDIA", "File content does not match a supported type")
 
 
+def require_supported_media_type(media_type: str) -> str:
+    if media_type not in MEDIA_SIGNATURES:
+        raise ApiError(415, "UNSUPPORTED_MEDIA", "The stored asset type is not supported")
+    return media_type
+
+
 def store_asset(
     assets_dir: Path,
     data: bytes,
