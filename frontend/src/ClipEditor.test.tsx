@@ -13,6 +13,8 @@ const baseClip: Clip = {
   note: "Personal note",
   sourceUrl: null,
   sourceTitle: null,
+  videoStartSeconds: null,
+  videoEndSeconds: null,
   createdAt: "2026-10-18T12:00:00Z",
   extractionStatus: "COMPLETED",
   ocrMarkdown: "# OCR markdown",
@@ -36,7 +38,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("previews an image original and exposes open and download actions", async () => {
+test("previews an image original and opens a closable full-screen viewer", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 206 }));
 
   renderEditor(baseClip);
@@ -44,10 +46,13 @@ test("previews an image original and exposes open and download actions", async (
   expect(screen.getByRole("status")).toHaveTextContent("正在载入原件");
   const image = await screen.findByRole("img", { name: "原件：sql-notes.png" });
   expect(image).toHaveAttribute("src", "/api/v1/assets/asset-image/content");
-  expect(screen.getByRole("link", { name: "在新窗口打开" })).toHaveAttribute(
-    "href",
-    "/api/v1/assets/asset-image/content",
+  await userEvent.click(screen.getByRole("button", { name: "全屏查看" }));
+  expect(screen.getByRole("dialog", { name: "全屏原件：sql-notes.png" })).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "全屏原件：sql-notes.png" })).toHaveAttribute(
+    "src", "/api/v1/assets/asset-image/content",
   );
+  await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "下载原件" })).toHaveAttribute(
     "download",
     "sql-notes.png",
@@ -67,6 +72,11 @@ test("previews a PDF with an embedded reader and fallback message", async () => 
   const reader = await screen.findByTitle("PDF 原件：paper.pdf");
   expect(reader).toHaveAttribute("src", "/api/v1/assets/asset-pdf/content");
   expect(screen.getByText(/如果浏览器无法显示 PDF/)).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "全屏查看" }));
+  expect(screen.getByTitle("全屏 PDF 原件：paper.pdf")).toHaveAttribute(
+    "src", "/api/v1/assets/asset-pdf/content",
+  );
 });
 
 test("switches between multiple original attachments", async () => {
@@ -92,6 +102,19 @@ test("shows immutable raw text when a clip has no attachments", () => {
 
   expect(screen.getByText("Immutable source text")).toBeInTheDocument();
   expect(screen.queryByText("正在载入原件")).not.toBeInTheDocument();
+});
+
+test("shows a saved video time range in the detail header", () => {
+  renderEditor({
+    ...baseClip,
+    kind: "VIDEO",
+    sourceTitle: "清月",
+    videoStartSeconds: 10,
+    videoEndSeconds: 20,
+    assets: [],
+  });
+
+  expect(screen.getByText("视频片段 00:10–00:20")).toBeInTheDocument();
 });
 
 test("shows a useful load error and retries the selected asset", async () => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { AssetPreview } from "./AssetPreview";
 import type { Clip } from "./types";
+import { formatVideoTimeRange } from "./videoTime";
 
 type EditorTab = "original" | "edit" | "ocr";
 
@@ -37,6 +38,9 @@ export function ClipEditor({
     () => clip.assets.find((asset) => asset.id === selectedAssetId) ?? clip.assets[0] ?? null,
     [clip.assets, selectedAssetId],
   );
+  const videoTime = clip.kind === "VIDEO"
+    ? formatVideoTimeRange(clip.videoStartSeconds, clip.videoEndSeconds)
+    : null;
 
   async function save() {
     setSaving(true);
@@ -57,6 +61,7 @@ export function ClipEditor({
         <div>
           <p className="eyebrow">CLIP DETAIL</p>
           <h2>{clip.sourceTitle || kindLabel(clip.kind)}</h2>
+          {videoTime && <p className="video-time video-time-detail">视频片段 {videoTime}</p>}
         </div>
         <button aria-label="关闭编辑器" onClick={onClose}>×</button>
       </div>

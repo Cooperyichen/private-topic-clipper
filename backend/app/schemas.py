@@ -76,6 +76,13 @@ class BatchUpdate(BaseModel):
     add_tag_ids: list[str] = Field(default_factory=list, max_length=100)
 
 
+class BatchDelete(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True, extra="forbid")
+
+    clip_ids: list[str] = Field(min_length=1, max_length=500)
+    confirm: bool = False
+
+
 class TopicCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

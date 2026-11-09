@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import uuid
 from typing import Any
@@ -22,6 +23,7 @@ from .exporter import (
 )
 from .records import serialize_clip
 from .schemas import (
+    BatchDelete,
     BatchUpdate,
     ClipUpdate,
     ExportConfirm,
@@ -34,6 +36,7 @@ from .schemas import (
     TopicOrderUpdate,
     TopicUpdate,
 )
+from .storage import resolve_asset_path
 
 
 def install_organization_routes(app: FastAPI) -> None:
@@ -249,6 +252,106 @@ def install_organization_routes(app: FastAPI) -> None:
                         (clip_id, tag_id),
                     )
             return {"data": {"updated": len(clip_ids)}}
+
+    @app.post("/api/v1/clips/batch-delete")
+    def batch_delete(request: Request, payload: BatchDelete) -> dict[str, Any]:
+        if not payload.confirm:
+            raise ApiError(
+                400,
+                "DELETE_CONFIRMATION_REQUIRED",
+                "Permanent deletion requires explicit confirmation",
+            )
+
+        database: Database = request.app.state.database
+        settings: Settings = request.app.state.settings
+        clip_ids = list(dict.fromkeys(payload.clip_ids))
+        asset_paths: list[str] = []
+        unreferenced_asset_paths: list[str] = []
+        extraction_job_ids: list[str] = []
+        placeholders = ",".join("?" for _ in clip_ids)
+
+        with database.connect() as connection:
+            ensure_ids_exist(connection, "clips", clip_ids, "CLIP_NOT_FOUND")
+            processing = connection.execute(
+                f"""
+                SELECT DISTINCT clip_id FROM extraction_jobs
+                WHERE clip_id IN ({placeholders}) AND status = 'PROCESSING'
+                """,
+                clip_ids,
+            ).fetchall()
+            if processing:
+                raise ApiError(
+                    409,
+                    "CLIP_EXTRACTION_IN_PROGRESS",
+                    "Wait for MinerU extraction to finish before permanently deleting this clip",
+                    {"clipIds": [row["clip_id"] for row in processing]},
+                )
+
+            asset_paths = list(
+                dict.fromkeys(
+                    row["relative_path"]
+                    for row in connection.execute(
+                        f"SELECT relative_path FROM assets WHERE clip_id IN ({placeholders})",
+                        clip_ids,
+                    ).fetchall()
+                )
+            )
+            for relative_path in asset_paths:
+                resolve_asset_path(settings.assets_dir, relative_path)
+
+            extraction_job_ids = [
+                row["id"]
+                for row in connection.execute(
+                    f"SELECT id FROM extraction_jobs WHERE clip_id IN ({placeholders})",
+                    clip_ids,
+                ).fetchall()
+            ]
+            topic_ids = [
+                row["topic_id"]
+                for row in connection.execute(
+                    f"SELECT DISTINCT topic_id FROM topic_clips WHERE clip_id IN ({placeholders})",
+                    clip_ids,
+                ).fetchall()
+            ]
+
+            connection.execute(
+                f"DELETE FROM clip_search WHERE clip_id IN ({placeholders})", clip_ids
+            )
+            connection.execute(f"DELETE FROM clips WHERE id IN ({placeholders})", clip_ids)
+
+            for topic_id in topic_ids:
+                remaining = connection.execute(
+                    "SELECT clip_id FROM topic_clips WHERE topic_id = ? ORDER BY position",
+                    (topic_id,),
+                ).fetchall()
+                connection.execute(
+                    "UPDATE topic_clips SET position = position + 1000000 WHERE topic_id = ?",
+                    (topic_id,),
+                )
+                for position, row in enumerate(remaining):
+                    connection.execute(
+                        "UPDATE topic_clips SET position = ? WHERE topic_id = ? AND clip_id = ?",
+                        (position, topic_id, row["clip_id"]),
+                    )
+                connection.execute(
+                    "UPDATE topics SET updated_at = ? WHERE id = ?",
+                    (current_time(), topic_id),
+                )
+
+            for relative_path in asset_paths:
+                still_referenced = connection.execute(
+                    "SELECT 1 FROM assets WHERE relative_path = ? LIMIT 1", (relative_path,)
+                ).fetchone()
+                if still_referenced is None:
+                    unreferenced_asset_paths.append(relative_path)
+
+        for relative_path in unreferenced_asset_paths:
+            resolve_asset_path(settings.assets_dir, relative_path).unlink(missing_ok=True)
+        extraction_root = settings.data_dir / "extractions"
+        for job_id in extraction_job_ids:
+            shutil.rmtree(safe_child(extraction_root, job_id), ignore_errors=True)
+
+        return {"data": {"deleted": len(clip_ids)}}
 
     @app.post("/api/v1/topics")
     def create_topic(request: Request, payload: TopicCreate) -> JSONResponse:

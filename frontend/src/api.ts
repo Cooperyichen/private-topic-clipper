@@ -81,6 +81,13 @@ export const api = {
       body: JSON.stringify({ clipIds: ids, status, addTagIds }),
     });
   },
+  async deleteClips(ids: string[]): Promise<void> {
+    await request("/api/v1/clips/batch-delete", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ clipIds: ids, confirm: true }),
+    });
+  },
   async createTag(name: string): Promise<Tag> {
     return (await request<{ data: Tag }>("/api/v1/tags", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ name }) })).data;
   },

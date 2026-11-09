@@ -8,6 +8,8 @@ The FastAPI service binds only to `127.0.0.1:8766`. Tailscale Serve terminates t
 
 The React interface is served by FastAPI from `frontend/dist`. It is designed for iPad, desktop, and narrow mobile viewports. MinerU work runs in a separate single-process worker, so file capture returns without waiting for extraction.
 
+Archiving only changes a clip's status. Permanent deletion is a separate, confirmed batch action that removes the clip, search index, tag and topic relations, extraction jobs, MinerU output, and any original asset no longer referenced by another clip. It does not rewrite previously exported Obsidian files or historical backup snapshots.
+
 ## Install
 
 1. Copy `.env.example` to `.env`, set `CLIPPER_ALLOWED_LOGIN`, and keep the file readable only by the service account.

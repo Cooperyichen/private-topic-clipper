@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Asset } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -6,7 +7,24 @@ type LoadState = "loading" | "ready" | "error";
 export function AssetPreview({ asset }: { asset: Asset }) {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [retryKey, setRetryKey] = useState(0);
+  const [fullScreen, setFullScreen] = useState(false);
   const url = assetContentUrl(asset.id);
+
+  useEffect(() => setFullScreen(false), [asset.id]);
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFullScreen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [fullScreen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -40,7 +58,7 @@ export function AssetPreview({ asset }: { asset: Asset }) {
           <small>{formatBytes(asset.byteSize)}</small>
         </div>
         <div>
-          <a href={url} target="_blank" rel="noreferrer">在新窗口打开</a>
+          <button className="asset-open" onClick={() => setFullScreen(true)}>全屏查看</button>
           <a href={url} download={asset.originalName}>下载原件</a>
         </div>
       </div>
@@ -58,11 +76,39 @@ export function AssetPreview({ asset }: { asset: Asset }) {
       {loadState === "ready" && asset.mediaType === "application/pdf" && (
         <div className="pdf-preview">
           <iframe src={url} title={`PDF 原件：${asset.originalName}`} />
-          <p>如果浏览器无法显示 PDF，请使用“在新窗口打开”或“下载原件”。</p>
+          <p>如果浏览器无法显示 PDF，请使用“下载原件”。</p>
         </div>
       )}
       {loadState === "ready" && !asset.mediaType.startsWith("image/") && asset.mediaType !== "application/pdf" && (
         <div className="asset-error"><p>此文件类型暂不支持网页内预览。</p></div>
+      )}
+      {fullScreen && createPortal(
+        <div
+          className="asset-fullscreen"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`全屏原件：${asset.originalName}`}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setFullScreen(false);
+          }}
+        >
+          <header>
+            <strong>{asset.originalName}</strong>
+            <button autoFocus onClick={() => setFullScreen(false)}>关闭</button>
+          </header>
+          <div className="asset-fullscreen-body">
+            {asset.mediaType.startsWith("image/") && (
+              <img src={url} alt={`全屏原件：${asset.originalName}`} />
+            )}
+            {asset.mediaType === "application/pdf" && (
+              <iframe src={url} title={`全屏 PDF 原件：${asset.originalName}`} />
+            )}
+            {!asset.mediaType.startsWith("image/") && asset.mediaType !== "application/pdf" && (
+              <p>此文件类型暂不支持网页内预览，请下载原件。</p>
+            )}
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

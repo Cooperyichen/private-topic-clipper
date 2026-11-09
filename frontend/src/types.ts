@@ -24,6 +24,8 @@ export interface Clip {
   note: string | null;
   sourceUrl: string | null;
   sourceTitle: string | null;
+  videoStartSeconds: number | null;
+  videoEndSeconds: number | null;
   createdAt: string;
   extractionStatus: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | null;
   ocrMarkdown: string | null;
