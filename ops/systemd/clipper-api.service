@@ -1,13 +1,13 @@
 [Unit]
-Description=Second Brain Clipper API
+Description=Private Topic Clipper API
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/coope/codex/second-brain/apps/clipper/backend
-EnvironmentFile=/home/coope/codex/second-brain/apps/clipper/.env
-ExecStart=/home/coope/codex/second-brain/apps/clipper/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8766 --proxy-headers --forwarded-allow-ips=127.0.0.1
+WorkingDirectory=@PROJECT_ROOT@/backend
+EnvironmentFile=@PROJECT_ROOT@/.env
+ExecStart=@PROJECT_ROOT@/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8766 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
 UMask=0077
@@ -15,7 +15,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/coope/codex/second-brain/apps/clipper/var /home/coope/codex/second-brain/vault/Clippings
+ReadWritePaths=@PROJECT_ROOT@/var @VAULT_DIR@/Clippings
 StandardOutput=journal
 StandardError=journal
 LogRateLimitIntervalSec=30s

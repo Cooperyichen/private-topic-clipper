@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily Second Brain Clipper snapshot
+Description=Daily Private Topic Clipper snapshot
 
 [Timer]
 OnCalendar=*-*-* 03:15:00

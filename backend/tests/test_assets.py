@@ -180,7 +180,7 @@ def test_sanitizes_historical_filename_before_building_response_header(
     with database.connect() as connection:
         connection.execute(
             "UPDATE assets SET original_name = ? WHERE id = ?",
-            ('notes.png\r\nX-Injected: yes', asset["id"]),
+            ("notes.png\r\nX-Injected: yes", asset["id"]),
         )
 
     response = client.get(f"/api/v1/assets/{asset['id']}/content", headers=auth_headers)

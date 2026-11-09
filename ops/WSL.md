@@ -5,8 +5,8 @@ services alone do not prevent an idle distribution from stopping.
 
 ## Enable persistence
 
-1. In Ubuntu, run `loginctl enable-linger coope`. Check that
-   `loginctl show-user coope -p Linger` reports `Linger=yes`. This starts the
+1. In Ubuntu, run `loginctl enable-linger "$(id -un)"`. Check that
+   `loginctl show-user "$(id -un)" -p Linger` reports `Linger=yes`. This starts the
    enabled API, worker and backup timer without requiring a login session.
 2. Copy `enable-wsl-persistence.ps1` to a local Windows directory and run it
    in Windows PowerShell. If the system blocks local scripts, use a policy
@@ -46,6 +46,6 @@ must not be relied upon to keep WSL running.
 
 To undo, stop and unregister only the `Clipper WSL Keepalive` task, then
 restore the original printed `.wslconfig.clipper-*.bak` file to `.wslconfig`
-and run `loginctl disable-linger coope` if session-scoped services are desired.
+and run `loginctl disable-linger "$(id -un)"` if session-scoped services are desired.
 Configuration rollback takes effect on the next WSL start. Avoid terminating WSL while other work is
 running. Windows sleep and shutdown still make the service unavailable.

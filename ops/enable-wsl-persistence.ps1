@@ -1,10 +1,17 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$Distro = 'Ubuntu',
-    [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$LinuxUser = 'coope'
+    [ValidatePattern('^[A-Za-z0-9_.-]*$')][string]$LinuxUser = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$wsl = Join-Path $env:WINDIR 'System32\wsl.exe'
+if ([string]::IsNullOrWhiteSpace($LinuxUser)) {
+    $LinuxUser = (& $wsl -d $Distro --exec /usr/bin/id -un).Trim()
+    if ($LinuxUser -notmatch '^[A-Za-z0-9_.-]+$') {
+        throw 'Could not safely detect the Linux user. Pass -LinuxUser explicitly.'
+    }
+}
 $configPath = Join-Path $env:USERPROFILE '.wslconfig'
 $content = if (Test-Path -LiteralPath $configPath) {
     [IO.File]::ReadAllText($configPath)
@@ -38,7 +45,6 @@ if ($updated -cne $content) {
 # A scheduled task owns the Windows process independently of SSH and interop
 # sessions. A detached child of an SSH-launched PowerShell can still be killed
 # when its Windows job ends. The task also restarts after Windows boots.
-$wsl = Join-Path $env:WINDIR 'System32\wsl.exe'
 $taskName = 'Clipper WSL Keepalive'
 $arguments = "-d $Distro -u $LinuxUser --exec /usr/bin/sleep infinity"
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue

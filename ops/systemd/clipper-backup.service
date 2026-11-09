@@ -1,17 +1,17 @@
 [Unit]
-Description=Create a consistent Second Brain Clipper snapshot
+Description=Create a consistent Private Topic Clipper snapshot
 After=clipper-api.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/coope/codex/second-brain/apps/clipper/backend
-EnvironmentFile=/home/coope/codex/second-brain/apps/clipper/.env
-ExecStart=/home/coope/codex/second-brain/apps/clipper/backend/.venv/bin/clipper-backup
+WorkingDirectory=@PROJECT_ROOT@/backend
+EnvironmentFile=@PROJECT_ROOT@/.env
+ExecStart=@PROJECT_ROOT@/backend/.venv/bin/clipper-backup
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/coope/codex/second-brain/apps/clipper/var
+ReadWritePaths=@PROJECT_ROOT@/var
 StandardOutput=journal
 StandardError=journal

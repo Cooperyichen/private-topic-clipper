@@ -79,9 +79,7 @@ def install_middleware(app: FastAPI, settings: Settings) -> None:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = (
-            "SAMEORIGIN"
-            if request.url.path.startswith("/api/v1/assets/")
-            else "DENY"
+            "SAMEORIGIN" if request.url.path.startswith("/api/v1/assets/") else "DENY"
         )
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
@@ -312,9 +310,7 @@ def install_routes(app: FastAPI) -> None:
         database: Database = request.app.state.database
         settings: Settings = request.app.state.settings
         with database.connect() as connection:
-            asset = connection.execute(
-                "SELECT * FROM assets WHERE id = ?", (asset_id,)
-            ).fetchone()
+            asset = connection.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
         if asset is None:
             raise ApiError(404, "ASSET_NOT_FOUND", "The requested asset does not exist")
 
